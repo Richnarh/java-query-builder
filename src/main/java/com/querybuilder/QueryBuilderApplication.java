@@ -4,10 +4,10 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
-public class QuerybuilderApplication {
+public class QueryBuilderApplication {
 
 	public static void main(String[] args) {
-		SpringApplication.run(QuerybuilderApplication.class, args);
+		SpringApplication.run(QueryBuilderApplication.class, args);
 	}
 
 }
