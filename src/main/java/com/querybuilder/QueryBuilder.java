@@ -723,12 +723,8 @@ public class QueryBuilder<T> {
     }
 
     private String getCondition(FieldCondition c) {
-        String expr;
-        if (c.getFieldName().contains(".")) {
-            expr = c.getFieldName();
-        } else {
-            expr = mainAlias + "." + c.getFieldName();
-        }
+        String expr = qualify(c.getFieldName());
+
         if (c.getFunction() != null) {
             expr = c.getFunction().toUpperCase() + "(" + expr + ")";
         }
@@ -834,8 +830,19 @@ public class QueryBuilder<T> {
     private String qualify(String field) {
         if (field == null) return null;
         field = field.trim();
-        if (field.contains(".") || field.contains("(") || field.contains(" ")) {
+
+        if (field.startsWith(mainAlias + ".") || field.contains("(") || field.contains(" ")) {
             return field;
+        }
+
+        int dot = field.indexOf('.');
+        if (dot > 0) {
+            String possibleAlias = field.substring(0, dot);
+            boolean isJoinAlias = joins.stream()
+                    .anyMatch(j -> j.alias().equals(possibleAlias));
+            if (isJoinAlias) {
+                return field;
+            }
         }
         return mainAlias + "." + field;
     }
