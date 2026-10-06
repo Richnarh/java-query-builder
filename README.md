@@ -617,6 +617,9 @@ public class UserService {
 
     private final CrudService crudService;
 
+    public UserService(CrudService crudService){
+      this.crudService = crudService;
+    }
     public User create(CreateUserRequest request) {
         User user = new User();
         user.setEmail(request.email());
