@@ -1,6 +1,3 @@
-# java-query-builder
-A lightweight, fluent query builder for JPA/Hibernate. Chain methods to build dynamic queries with joins, aggregates, grouping, pagination, and bulk deletes - all without writing a single JPQL string.
-
 # QueryBuilder & Pagination
 
 [![Java](https://img.shields.io/badge/Java-17%2B-orange)](https://openjdk.org/)
@@ -94,19 +91,8 @@ Create a package in your project (recommended: `com.yourcompany.persistence` or 
 | `FieldCondition.java` | ✅ Yes   | Internal condition representation        |
 | `JoinCondition.java`  | ✅ Yes   | Join definition record                   |
 | `Pagination.java`     | Optional | Helper for paged results                 |
+| `PagedResult.java`    | Optional | DTO returned by `Pagination`             |
 | `CrudService.java`    | Optional | Generic CRUD + QueryBuilder integration  |
-
-> You will also need the `PagedResult` DTO if you use `Pagination`.  
-> Example:
-> ```java
-> public record PagedResult<T>(
->     List<T> pageResult,
->     int page,
->     int pageSize,
->     long count,
->     int totalPages
-> ) {}
-> ```
 
 ### 2. Add required dependencies
 
@@ -507,7 +493,13 @@ public record PagedResult<T>(
     int pageSize,
     long count,           // total elements
     int totalPages
-) {}
+) {
+    public static <T> PagedResult<T> of(List<T> content, int page, int pageSize, long totalElements) { ... }
+
+    public boolean hasNext()      { return page < totalPages; }
+    public boolean hasPrevious()  { return page > 1; }
+    public boolean isEmpty()      { return pageResult == null || pageResult.isEmpty(); }
+}
 ```
 
 ### Page numbering
@@ -532,31 +524,125 @@ public record PagedResult<T>(
 
 ## CrudService
 
-A thin, generic service that pairs perfectly with `QueryBuilder`.
+A thin, generic service that pairs perfectly with `QueryBuilder`.  
+It provides common CRUD operations without requiring a repository per entity.
+
+### Find operations
 
 ```java
-// Find
+// By primary key
 Optional<User> opt = crudService.findById(User.class, 1L);
-User user = crudService.getById(User.class, 1L);          // throws EntityNotFoundException
+User user = crudService.getById(User.class, 1L);          // throws EntityNotFoundException if not found
 
+// Using QueryBuilder
 List<User> list = crudService.findBy(queryBuilder);
 Optional<User> one = crudService.findOneBy(queryBuilder);
-User required = crudService.getOneBy(queryBuilder);
+User required = crudService.getOneBy(queryBuilder);       // throws if not found
 
 long count = crudService.countBy(queryBuilder);
-int deleted = crudService.deleteBy(queryBuilder);
+```
 
-// Save / Update
-User saved = crudService.save(user);
-List<User> savedAll = crudService.saveAll(collection);
+### Save & Update
 
-// Delete
-crudService.deleteById(User.class, id);
-crudService.delete(entity);
-crudService.deleteAll(collection);
+`save` automatically decides between `persist` (new entity) and `merge` (existing entity) based on whether the identifier is `null`.
 
-// Batch insert/update
-int count = crudService.batchSave(entities, 50);   // flush & clear every 50
+```java
+// Create a new entity (id == null → persist)
+User newUser = new User();
+newUser.setEmail("john@example.com");
+newUser.setStatus("ACTIVE");
+User saved = crudService.save(newUser);          // returns the managed instance
+
+// Update an existing entity (id != null → merge)
+User existing = crudService.getById(User.class, 42L);
+existing.setStatus("INACTIVE");
+User updated = crudService.save(existing);
+
+// Save multiple entities
+List<User> users = List.of(user1, user2, user3);
+List<User> savedUsers = crudService.saveAll(users);
+```
+
+#### Batch save (recommended for large collections)
+
+```java
+// Flushes and clears the persistence context every N entities
+// to keep memory usage low
+int savedCount = crudService.batchSave(largeList, 50);   // batch size = 50
+
+// Example: import 10 000 records safely
+List<Product> products = loadFromCsv(...);
+int imported = crudService.batchSave(products, 100);
+```
+
+### Delete operations
+
+```java
+// By id
+crudService.deleteById(User.class, 42L);
+
+// By entity instance
+crudService.delete(user);
+
+// Multiple entities
+crudService.deleteAll(List.of(user1, user2));
+
+// Using QueryBuilder (bulk delete)
+int deleted = crudService.deleteBy(
+    new QueryBuilder<>(crudService.getEm(), User.class)
+        .where("status", "INACTIVE")
+        .andWhere("lastLogin", "<", cutoffDate)
+);
+```
+
+### Other helpers
+
+```java
+crudService.refresh(entity);      // reload from database
+crudService.detach(entity);       // remove from persistence context
+crudService.flush();              // force flush
+crudService.flushAndClear();      // flush + clear
+```
+
+### Full example – Service layer
+
+```java
+@Service
+@RequiredArgsConstructor
+public class UserService {
+
+    private final CrudService crudService;
+
+    public User create(CreateUserRequest request) {
+        User user = new User();
+        user.setEmail(request.email());
+        user.setName(request.name());
+        user.setStatus("ACTIVE");
+        return crudService.save(user);
+    }
+
+    public User updateStatus(Long id, String status) {
+        User user = crudService.getById(User.class, id);
+        user.setStatus(status);
+        return crudService.save(user);
+    }
+
+    public List<User> findActiveUsers() {
+        return crudService.findBy(
+            new QueryBuilder<>(crudService.getEm(), User.class)
+                .where("status", "ACTIVE")
+                .orderByDesc("createdDate")
+        );
+    }
+
+    public void deactivateInactiveUsers(LocalDateTime cutoff) {
+        crudService.deleteBy(
+            new QueryBuilder<>(crudService.getEm(), User.class)
+                .where("status", "INACTIVE")
+                .andWhere("lastLogin", "<", cutoff)
+        );
+    }
+}
 ```
 
 ---
@@ -654,7 +740,9 @@ com.yourcompany.persistence
 ├── FieldCondition.java
 ├── JoinCondition.java
 ├── Pagination.java
-└── CrudService.java
+├── CrudService.java
+└── dto
+    └── PagedResult.java
 ```
 
 ---
