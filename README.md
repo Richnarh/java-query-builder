@@ -184,6 +184,10 @@ public class ProductService {
 
     private final CrudService crudService;
 
+    ProductService(CrudService crudService){
+        crudService = crudService;
+    }
+
     public List<Product> findActive() {
         return crudService.findBy(
             new QueryBuilder<>(crudService.getEm(), Product.class)
